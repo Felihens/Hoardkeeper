@@ -7,6 +7,8 @@ Mod para Valheim (BepInEx, client-side): todos os baús ao seu redor numa janela
 For players, see [package/README.md](package/README.md). That file is also the Thunderstore page.
 Para jogadores, veja [package/README.md](package/README.md).
 
+Download: [Thunderstore](https://thunderstore.io/c/valheim/p/DJAventuras/Hoardkeeper/) · [Nexus Mods](https://www.nexusmods.com/valheim/mods/4948) · [GitHub Releases](https://github.com/Felihens/Hoardkeeper/releases)
+
 ## Building
 
 `sh build.sh` compiles `src/*.cs` against the game's assemblies and installs the dll into `BepInEx/plugins/Hoardkeeper/` (`sh build.sh nocopy` only compiles). Then `powershell -File pack.ps1` builds `dist/Hoardkeeper-<version>.zip` from `package/`.
