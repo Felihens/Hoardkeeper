@@ -21,7 +21,7 @@ namespace Hoardkeeper
     // (user, 2026-11-12: no Fetch, the crafting-from-chests mod already does it; no junk marks; no Find beams;
     //  T sorts the open chest when one is open, else your bag; range 50 m)
     [HarmonyPatch]
-    [BepInPlugin("felih.Hoardkeeper", "Hoardkeeper", "1.0.0")]
+    [BepInPlugin("felih.Hoardkeeper", "Hoardkeeper", "1.1.0")]
     public class Plugin : BaseUnityPlugin
     {
         internal enum SortOrder { Type, NameAZ, NameZA, Quality, Weight, Amount, Value }

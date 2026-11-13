@@ -12,13 +12,14 @@ Every chest around you in one window. Sort, stack, restock, tag and name your ch
 
 **Storage window** (Shift + F, or the *Storage* button next to your inventory)
 - Shows every chest within 50 m in a grid, two or more side by side, with the game's own chest slots. Drag, split and Ctrl + click work as in a normal chest.
-- **Search box:** items that match light up, and the rest fade.
-- **Right-click an item** to light up that item in every chest and see how many you have in total.
+- **Search box:** items that match light up, and the rest fade. Chests holding the item move to the top.
+- **Right-click an item** to light up that item in every chest and see how many you have in total. Those chests move to the top too.
 - **Left-side commands:**
   - *Sort all*
   - *Tidy up*: gathers each item into the chest that holds most of it.
   - *Stack*
   - *Fill tags*
+  - *Filter*: shows only the chests with one tag.
   - *Bag on/off*: whether Gather also takes from your bag.
   - *Close*
 - **Buttons on each chest:**
@@ -29,6 +30,7 @@ Every chest around you in one window. Sort, stack, restock, tag and name your ch
   - *Name*
   - *Skip*: hides the chest from the window and from Stack and Restock, for you only.
 - Ctrl + click an item in your bag sends it to a chest tagged for it, or else to a chest that already holds it.
+- Under your bag, a short list shows your last Ctrl + click moves and which chest each item went to.
 
 **Chest tags**
 - Give a chest one or more kinds of item, from the Storage window or from the chest's own window. The 20 kinds are Weapons, Ammo, Armor, Tools, Food, Meads, Meat, Fish, Crops, Seeds, Ores, Metals, Wood, Stone, Hides, Creature (creature parts), Valuables, Trophies, Materials and Misc.
@@ -103,13 +105,14 @@ Todos os baús ao seu redor numa janela só. Organize, empilhe, reabasteça, mar
 
 **Janela Storage** (Shift + F, ou o botão *Storage* ao lado do inventário)
 - Mostra todos os baús a até 50 m numa grade, dois ou mais lado a lado, com os próprios espaços de baú do jogo. Arrastar, dividir e Ctrl + clique funcionam como num baú normal.
-- **Busca:** os itens que combinam acendem e o resto fica apagado.
-- **Clique direito num item** acende esse item em todos os baús e mostra quantos você tem no total.
+- **Busca:** os itens que combinam acendem e o resto fica apagado. Os baús que têm o item sobem para o topo.
+- **Clique direito num item** acende esse item em todos os baús e mostra quantos você tem no total. Esses baús também sobem para o topo.
 - **Comandos à esquerda:**
   - *Sort all*: organiza todos.
   - *Tidy up*: junta cada item no baú que tem mais dele.
   - *Stack*
   - *Fill tags*
+  - *Filter*: mostra só os baús com uma tag.
   - *Bag on/off*: se o Gather também pega da bolsa.
   - *Close*
 - **Botões em cada baú:**
@@ -120,6 +123,7 @@ Todos os baús ao seu redor numa janela só. Organize, empilhe, reabasteça, mar
   - *Name*
   - *Skip*: esconde o baú da janela, do Stack e do Restock, só para você.
 - Ctrl + clique num item da bolsa manda ele para um baú com a tag dele. Se não houver, vai para um baú que já tem esse item.
+- Embaixo da bolsa, uma listinha mostra suas últimas movimentações com Ctrl + clique e para qual baú cada item foi.
 
 **Tags de baú**
 - Dê a um baú um ou mais tipos de item, pela janela Storage ou pela janela do próprio baú. São 20 tipos: armas, munição, armadura, ferramentas, comida, hidromel, carne, peixe, colheita, sementes, minério, metais, madeira, pedra, couro, partes de criatura, valiosos, troféus, materiais e diversos.

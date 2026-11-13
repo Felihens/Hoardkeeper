@@ -299,8 +299,13 @@ namespace Hoardkeeper
         }
 
         // Ctrl + click in your bag with the Storage window open: into a chest that holds that item, else any with room
+        // where the last SendToChests put the item, and how many
+        internal static Container LastTo;
+        internal static int LastMoved;
+
         internal static bool SendToChests(Player p, ItemDrop.ItemData it, List<Container> chests)
         {
+            LastTo = null; LastMoved = 0;
             if (it.m_shared.m_questItem) return false;
             // a chest tagged with the item's category comes first (one already holding it before an empty one)
             string cat = Tags.Category(it);
@@ -324,7 +329,9 @@ namespace Hoardkeeper
             if (to == null) { Plugin.Say("No room in the chests"); return false; }
             if (it.m_equipped) p.UnequipItem(it, false);
             Chests.Claim(to);
-            return Chests.Move(p.GetInventory(), to.GetInventory(), it, it.m_stack) > 0;
+            LastMoved = Chests.Move(p.GetInventory(), to.GetInventory(), it, it.m_stack);
+            LastTo = to;
+            return LastMoved > 0;
         }
 
         // ------------------------------------------------------------ trash

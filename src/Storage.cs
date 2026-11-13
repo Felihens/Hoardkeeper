@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Reflection;
+using System.Text;
 using HarmonyLib;
 using TMPro;
 using UnityEngine;
@@ -26,6 +27,7 @@ namespace Hoardkeeper
             public InventoryGrid grid;
             public TextMeshProUGUI title;
             public int rows = -1, cols = -1;
+            public bool placed;     // laid out at least once (before that its place on screen means nothing)
             public float btnW, h;
             public RectTransform chips;
             public readonly List<KeyValuePair<string, Button>> chipBtns = new List<KeyValuePair<string, Button>>();
@@ -40,8 +42,17 @@ namespace Hoardkeeper
         private static Section _renaming;
         private static TextMeshProUGUI _status;
         private static Button _bagBtn;
-        private static CanvasGroup _bagGroup;
+        private static CanvasGroup _bagGroup, _panelGroup;
         private static string _chosen;
+        private static string _tagFilter;            // null = every chest
+        private static Button _filterBtn;
+        private static RectTransform _filterPop;
+        private static readonly List<KeyValuePair<string, Button>> _filterChips = new List<KeyValuePair<string, Button>>();
+        private static TextMeshProUGUI _notes;
+        private static Image _notesBg;
+        private static readonly List<KeyValuePair<string, float>> _noteList = new List<KeyValuePair<string, float>>();
+        private const float NoteLife = 8f, NoteFade = 1.5f;
+        private const int NoteMax = 6;
         private static float _statusAt;
         private static int _frame;
         private static bool _logged;
@@ -142,6 +153,9 @@ namespace Hoardkeeper
             _chosen = null;
             if (_search != null) _search.text = "";
             if (_panel != null) _panel.gameObject.SetActive(false);
+            if (_filterPop != null) _filterPop.gameObject.SetActive(false);
+            if (_notes != null) _notes.gameObject.SetActive(false);
+            if (_notesBg != null) _notesBg.gameObject.SetActive(false);
         }
 
         // after Skip / Use: the same window again, same scroll
@@ -172,16 +186,29 @@ namespace Hoardkeeper
             _panel.anchorMin = _panel.anchorMax = new Vector2(0.5f, 0.5f);
             _panel.pivot = new Vector2(0f, 1f);
             Skin.Window(gui, _panel, pg.AddComponent<Image>());
+            // the game switches every button under the inventory off and on when a dialog (split stack) opens and
+            // closes; with dozens of chest grids here that froze the game for seconds. This window keeps its own state.
+            _panelGroup = pg.AddComponent<CanvasGroup>();
+            _panelGroup.ignoreParentGroups = true;
+            // its own canvas: when anything else in the inventory changes (the split dialog showing), Unity rebuilds
+            // that canvas, and with every chest's slots in it that took seconds. Now the chests stay out of it.
+            Canvas own = pg.AddComponent<Canvas>();
+            own.overrideSorting = false;
+            pg.AddComponent<GraphicRaycaster>();
 
             // left side: search, the window-wide commands, and the keys
             _search = Ui.Field(gui, _panel, "Find item...");
             Place((RectTransform)_search.transform, Pad, -Pad, SideW - Pad, 28f);
-            _search.onValueChanged.AddListener(s => { _chosen = null; _statusAt = 0f; });
+            _search.onValueChanged.AddListener(s => { _chosen = null; _statusAt = 0f; ToTop(); });
             float y = -Pad - 36f;
             y = Side(gui, "Sort all", y, () => Actions.SortAll(Live()), "Sort every chest here (order: Shift + T)");
             y = Side(gui, "Tidy up", y, () => Actions.Tidy(Live()), "Each kind of item into the chest that holds the most of it, then sort them all");
             y = Side(gui, "Stack", y, () => Actions.QuickStack(Player.m_localPlayer), "Your items into the chests that hold the same item (Shift + Q)");
             y = Side(gui, "Fill tags", y, () => Tags.Fill(Player.m_localPlayer, Live()), "Send every item to the chest tagged with its category (Food, Ores, Wood...), from your bag and from chests not tagged for it. Tag a chest with its Tags button");
+            _filterBtn = Ui.CloneButton(gui, _panel, "Filter: All", SideW - Pad, 28f, ToggleFilter, "Show only the chests with a tag");
+            Place((RectTransform)_filterBtn.transform, Pad, y, SideW - Pad, 28f);
+            float filterY = y;
+            y -= 32f;
             _bagBtn = Ui.CloneButton(gui, _panel, "Bag: off", SideW - Pad, 28f, () => { Plugin.GatherFromBag.Value = !Plugin.GatherFromBag.Value; }, "Gather also takes from your bag (never hotbar, locked, favorite or worn)");
             Place((RectTransform)_bagBtn.transform, Pad, y, SideW - Pad, 28f);
             y -= 32f;
@@ -215,6 +242,23 @@ namespace Hoardkeeper
             xr.pivot = new Vector2(1f, 1f);
             xr.anchoredPosition = new Vector2(-Pad, -Pad + 2f);
             xr.sizeDelta = new Vector2(32f, 28f);
+
+            BuildFilter(gui, filterY);
+            GameObject nb = new GameObject("Hoardkeeper_NotesBg", typeof(RectTransform), typeof(Image));
+            nb.transform.SetParent(_panel.parent, false);
+            _notesBg = nb.GetComponent<Image>();
+            _notesBg.raycastTarget = false;
+            _notesBg.rectTransform.anchorMin = _notesBg.rectTransform.anchorMax = new Vector2(0.5f, 0.5f);
+            _notesBg.rectTransform.pivot = new Vector2(0f, 1f);
+            nb.SetActive(false);
+            _notes = Ui.Text(gui, _panel.parent, 22f, new Color(1f, 0.88f, 0.6f, 1f), TextAlignmentOptions.TopLeft);
+            _notes.gameObject.name = "Hoardkeeper_Notes";
+            _notes.enableWordWrapping = true;
+            _notes.overflowMode = TextOverflowModes.Overflow;
+            _notes.raycastTarget = false;
+            _notes.rectTransform.anchorMin = _notes.rectTransform.anchorMax = new Vector2(0.5f, 0.5f);
+            _notes.rectTransform.pivot = new Vector2(0f, 1f);
+            _notes.gameObject.SetActive(false);
 
             GameObject vp = new GameObject("Viewport", typeof(RectTransform));
             _viewport = (RectTransform)vp.transform;
@@ -262,6 +306,101 @@ namespace Hoardkeeper
             r.pivot = new Vector2(0f, 1f);
             r.anchoredPosition = new Vector2(x, y);
             r.sizeDelta = new Vector2(w, h);
+        }
+
+        private static void ToTop() { if (_content != null) _content.anchoredPosition = Vector2.zero; }
+
+        // ------------------------------------------------------------ tag filter
+
+        // a box of tag buttons beside the Filter button; one click picks the tag and closes it
+        private static void BuildFilter(InventoryGui gui, float y)
+        {
+            GameObject g = new GameObject("Hoardkeeper_Filter", typeof(RectTransform));
+            _filterPop = (RectTransform)g.transform;
+            _filterPop.SetParent(_panel, false);
+            Skin.Window(gui, _filterPop, g.AddComponent<Image>());
+            List<string> names = new List<string>();
+            names.Add("All");
+            names.AddRange(Tags.All);
+            const int per = 3;
+            for (int i = 0; i < names.Count; i++)
+            {
+                string tag = names[i];
+                Button b = Ui.CloneButton(gui, _filterPop, tag, ChipW + 6f, ChipH, () => PickFilter(tag == "All" ? null : tag), null);
+                Place((RectTransform)b.transform, 8f + (i % per) * (ChipW + 10f), -8f - (i / per) * (ChipH + 4f), ChipW + 6f, ChipH);
+                _filterChips.Add(new KeyValuePair<string, Button>(tag, b));
+            }
+            int rows = (names.Count + per - 1) / per;
+            Place(_filterPop, SideW + 4f, y, 16f + per * (ChipW + 10f) - 4f, 16f + rows * (ChipH + 4f) - 4f);
+            g.SetActive(false);
+        }
+
+        private static void ToggleFilter()
+        {
+            if (_filterPop == null) return;
+            bool on = !_filterPop.gameObject.activeSelf;
+            _filterPop.gameObject.SetActive(on);
+            if (!on) return;
+            _filterPop.SetAsLastSibling();
+            foreach (KeyValuePair<string, Button> kv in _filterChips)
+            {
+                bool cur = kv.Key == "All" ? _tagFilter == null : kv.Key == _tagFilter;
+                Ui.Label(kv.Value, cur ? "<b><color=#ffcc55>" + kv.Key + "</color></b>" : kv.Key);
+            }
+        }
+
+        private static void PickFilter(string tag)
+        {
+            _tagFilter = tag;
+            if (_filterPop != null) _filterPop.gameObject.SetActive(false);
+            if (_filterBtn != null) Ui.Label(_filterBtn, tag == null ? "Filter: All" : "Filter: <color=#ffcc55>" + tag + "</color>");
+            _statusAt = 0f;
+            ToTop();
+        }
+
+        private static bool Passes(Section s)
+        {
+            return _tagFilter == null || (s.c != null && Tags.Of(s.c).Contains(_tagFilter));
+        }
+
+        // ------------------------------------------------------------ move notices, under your bag
+
+        internal static void Note(string text)
+        {
+            _noteList.Insert(0, new KeyValuePair<string, float>(text, Time.time));
+            while (_noteList.Count > NoteMax) _noteList.RemoveAt(_noteList.Count - 1);
+        }
+
+        private static void ShowNotes(InventoryGui gui)
+        {
+            if (_notes == null) return;
+            for (int i = _noteList.Count - 1; i >= 0; i--) if (Time.time - _noteList[i].Value > NoteLife) _noteList.RemoveAt(i);
+            bool on = _open && _noteList.Count > 0;
+            if (_notes.gameObject.activeSelf != on) _notes.gameObject.SetActive(on);
+            if (_notesBg.gameObject.activeSelf != on) _notesBg.gameObject.SetActive(on);
+            if (!on) return;
+            Vector3[] cs = new Vector3[4];
+            gui.m_player.GetWorldCorners(cs);
+            RectTransform r = _notes.rectTransform;
+            float sx = Mathf.Max(0.01f, r.lossyScale.x);
+            r.position = new Vector3(cs[0].x + 6f * sx, cs[0].y - 10f * sx, r.position.z);
+            r.sizeDelta = new Vector2((cs[3].x - cs[0].x) / sx - 12f, 200f);
+            if (r.GetSiblingIndex() != r.parent.childCount - 1) { _notesBg.rectTransform.SetAsLastSibling(); r.SetAsLastSibling(); }
+            StringBuilder sb = new StringBuilder();
+            foreach (KeyValuePair<string, float> n in _noteList)
+            {
+                float left = NoteLife - (Time.time - n.Value);
+                int a = Mathf.Clamp(Mathf.RoundToInt(255f * Mathf.Clamp01(left / NoteFade)), 0, 255);
+                sb.Append("<alpha=#").Append(a.ToString("X2")).Append(">").Append(n.Key).Append("\n");
+            }
+            string text = sb.ToString().TrimEnd('\n');
+            if (_notes.text != text) _notes.text = text;
+            // a dark, see-through box behind the lines, fading with the newest one
+            float newest = Mathf.Clamp01((NoteLife - (Time.time - _noteList[0].Value)) / NoteFade);
+            _notesBg.color = new Color(0f, 0f, 0f, 0.6f * newest);
+            RectTransform b = _notesBg.rectTransform;
+            b.position = new Vector3(r.position.x - 6f * sx, r.position.y + 6f * sx, r.position.z);
+            b.sizeDelta = new Vector2(r.sizeDelta.x + 12f, _notes.preferredHeight + 12f);
         }
 
         private static void Add(InventoryGui gui, Container c, bool skipped)
@@ -458,10 +597,20 @@ namespace Hoardkeeper
                 Chests.Claim(s.c);
                 if (mod == InventoryGrid.Modifier.Move && item != null && DragF.GetValue(gui) == null)
                 {
-                    if (!item.m_shared.m_questItem) p.GetInventory().MoveItemToThis(grid.GetInventory(), item);
+                    if (!item.m_shared.m_questItem)
+                    {
+                        string name = item.m_shared.m_name;
+                        int before = item.m_stack;
+                        p.GetInventory().MoveItemToThis(grid.GetInventory(), item);
+                        int moved = grid.GetInventory().ContainsItem(item) ? before - item.m_stack : before;
+                        if (moved > 0) Note(Shown(name) + " x" + moved + " <color=#bbbbbb>moved to your bag</color>");
+                    }
                     return;
                 }
+                System.Diagnostics.Stopwatch w = System.Diagnostics.Stopwatch.StartNew();
                 SelectedM.Invoke(gui, new object[] { grid, item, pos, mod });
+                w.Stop();
+                Perf("click " + mod, w.Elapsed.TotalMilliseconds);
             }
             catch (Exception e) { Plugin.Log.LogWarning("Storage click failed: " + e); }
         }
@@ -471,6 +620,7 @@ namespace Hoardkeeper
         {
             _chosen = item == null || item.m_shared.m_name == _chosen ? null : item.m_shared.m_name;
             _statusAt = 0f;
+            ToTop();
         }
 
         // Ctrl + click in your bag while the window is open: into the chests (the game would drop it on the ground)
@@ -479,7 +629,9 @@ namespace Hoardkeeper
         {
             if (!_open || grid != __instance.m_playerGrid || mod != InventoryGrid.Modifier.Move || item == null) return true;
             if (DragF.GetValue(__instance) != null) return true;
-            Actions.SendToChests(Player.m_localPlayer, item, Live());
+            string what = item.m_shared.m_name;
+            if (Actions.SendToChests(Player.m_localPlayer, item, Live()) && Actions.LastTo != null)
+                Note(Shown(what) + " x" + Actions.LastMoved + " <color=#bbbbbb>moved to chest</color> <color=#8fc8ff>" + Chests.Title(Actions.LastTo) + "</color>");
             return false;
         }
 
@@ -533,6 +685,20 @@ namespace Hoardkeeper
 
         // ------------------------------------------------------------ every frame
 
+        // timing: a slow frame while the window is open goes to the log with what this mod spent in it
+        private static readonly System.Diagnostics.Stopwatch _watch = new System.Diagnostics.Stopwatch();
+        private static int _redrawn;
+        private static float _perfAt;
+
+        private static void Perf(string what, double oursMs)
+        {
+            float frame = Time.unscaledDeltaTime * 1000f;
+            if (oursMs < 15.0 && frame < 120f) return;
+            if (Time.unscaledTime < _perfAt) return;
+            _perfAt = Time.unscaledTime + 1f;
+            Plugin.Log.LogInfo("[perf] " + what + ": Hoardkeeper " + oursMs.ToString("0.0") + " ms, last frame " + frame.ToString("0") + " ms, chests " + _sections.Count + ", redrawn " + _redrawn);
+        }
+
         [HarmonyPatch(typeof(InventoryGui), "Update"), HarmonyPostfix]
         private static void Tick(InventoryGui __instance)
         {
@@ -541,11 +707,21 @@ namespace Hoardkeeper
             {
                 Player p = Player.m_localPlayer;
                 if (p == null || !InventoryGui.IsVisible() || __instance.IsContainerOpen()) { Close(); return; }
+                _watch.Reset(); _watch.Start();
+                _redrawn = 0;
+                // while the split dialog is up, clicks don't reach the chests behind it
+                bool split = __instance.m_splitDialog != null && __instance.m_splitDialog.IsActive;
+                if (_panelGroup != null && _panelGroup.blocksRaycasts == split) _panelGroup.blocksRaycasts = !split;
                 Refresh(__instance, p);
+                ShowNotes(__instance);
                 NoTipsUnder();
+                _watch.Stop();
+                Perf("frame", _watch.Elapsed.TotalMilliseconds);
             }
             catch (Exception e) { Plugin.Log.LogWarning("Storage window: " + e); Close(); }
         }
+
+        private static readonly Vector3[] _cs = new Vector3[4], _vc = new Vector3[4];
 
         private static void Refresh(InventoryGui gui, Player p)
         {
@@ -567,7 +743,7 @@ namespace Hoardkeeper
             // where: in place of a chest's window, or over your bag when it's hidden
             // where: right of the button column, from the top of your bag to near the bottom of the screen,
             // over the equipment and crafting panels (the canvas draws in screen pixels; local units are scaled)
-            Vector3[] cs = new Vector3[4];
+            Vector3[] cs = _cs;
             gui.m_player.GetWorldCorners(cs);
             float top = cs[1].y, left = cs[2].x + 150f * _panel.lossyScale.x;
             RectTransform col = Ui.Column;
@@ -582,13 +758,25 @@ namespace Hoardkeeper
             Ui.Label(_bagBtn, Plugin.GatherFromBag.Value ? "Bag: on" : "Bag: off");
             if (_renaming != null && !_rename.isFocused && !_rename.gameObject.activeSelf) _renaming = null;
 
-            Vector3[] vc = new Vector3[4];
+            Vector3[] vc = _vc;
             _viewport.GetWorldCorners(vc);
             // a grid of cards: at least two chests side by side; slots shrink when a chest is too wide
             float cw = _content.rect.width;
             int ncol = Mathf.Max(2, Mathf.FloorToInt((cw + Gap) / (CardMin + Gap)));
             float secW = (cw - Gap * (ncol - 1)) / ncol;
+            // the order on screen: chests holding what you search for first, the rest after; the tag filter hides
+            string filter = Filter();
+            bool searching = _chosen != null || filter.Length > 0;
+            List<Section> shown = new List<Section>(), later = new List<Section>();
             foreach (Section s in _sections)
+            {
+                bool pass = Passes(s);
+                if (s.root.gameObject.activeSelf != pass) s.root.gameObject.SetActive(pass);
+                if (!pass) continue;
+                (!searching || (!s.skipped && Holds(s, filter)) ? shown : later).Add(s);
+            }
+            shown.AddRange(later);
+            foreach (Section s in shown)
             {
                 Inventory inv = s.c.GetInventory();
                 string tags = Tags.Shown(s.c);
@@ -617,27 +805,29 @@ namespace Hoardkeeper
                 s.h = y0 + rows * space * sc + 8f;
                 // only the chests you can see are redrawn every frame
                 s.root.GetWorldCorners(cs);
-                bool seen = cs[0].y < vc[1].y && cs[1].y > vc[0].y;
-                if (seen || _frame % 20 == 0 || s.grid.GetInventory() != inv)
+                bool seen = s.placed && cs[0].y < vc[1].y && cs[1].y > vc[0].y;
+                if (seen)
                 {
                     ZNetView nv = Chests.View(s.c);
                     if (!nv.IsOwner()) { Chests.Claim(s.c); Chests.MarkInUse(s.c, true); }
                     s.grid.UpdateInventory(inv, null, drag);
+                    _redrawn++;
                     Mute(s);
                     if (seen) Tint(s.grid, inv);
                 }
             }
             // rows of cards, every card in a row as tall as the tallest
             float y = 0f;
-            for (int i = 0; i < _sections.Count; i += ncol)
+            for (int i = 0; i < shown.Count; i += ncol)
             {
                 float rowH = 0f;
-                for (int k = 0; k < ncol && i + k < _sections.Count; k++) rowH = Mathf.Max(rowH, _sections[i + k].h);
-                for (int k = 0; k < ncol && i + k < _sections.Count; k++)
+                for (int k = 0; k < ncol && i + k < shown.Count; k++) rowH = Mathf.Max(rowH, shown[i + k].h);
+                for (int k = 0; k < ncol && i + k < shown.Count; k++)
                 {
-                    Section s = _sections[i + k];
+                    Section s = shown[i + k];
                     s.root.anchoredPosition = new Vector2(k * (secW + Gap), -y);
                     s.root.sizeDelta = new Vector2(secW, rowH);
+                    s.placed = true;
                 }
                 y += rowH + Gap;
             }
@@ -663,6 +853,12 @@ namespace Hoardkeeper
         {
             if (_chosen != null) return it.m_shared.m_name == _chosen;
             return Shown(it.m_shared.m_name).IndexOf(filter, StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static bool Holds(Section s, string filter)
+        {
+            foreach (ItemDrop.ItemData it in s.c.GetInventory().GetAllItems()) if (Matches(it, filter)) return true;
+            return false;
         }
 
         private static void Tint(InventoryGrid grid, Inventory inv)

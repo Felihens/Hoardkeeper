@@ -1,6 +1,6 @@
 {
   "name": "Hoardkeeper",
-  "version_number": "1.0.0",
+  "version_number": "1.1.0",
   "website_url": "https://github.com/Felihens/Hoardkeeper",
   "description": "Every chest around you in one window: search, sort, stack, restock, chest tags and names, slot locks and favorites. Client-side.",
   "dependencies": [
