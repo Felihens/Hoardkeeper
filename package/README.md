@@ -89,7 +89,7 @@ Press **F1** in game (requires Configuration Manager) or edit `BepInEx/config/fe
 | GatherFromBag | off | Gather also takes from your bag (also a button in the window). |
 | WindowWidth / WindowHeight | 0 (automatic) | Size of the Storage window. |
 | ScrollSpeed | 3000 | Mouse wheel speed in the Storage window. |
-| ButtonsOffset | 8, 0 | Where the button column sits next to your inventory. |
+| ButtonsOffset | 8, 0 | Where the button column sits, from the top-right corner of the chest window. |
 
 ### Notes
 

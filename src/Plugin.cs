@@ -21,7 +21,7 @@ namespace Hoardkeeper
     // (user, 2026-11-12: no Fetch, the crafting-from-chests mod already does it; no junk marks; no Find beams;
     //  T sorts the open chest when one is open, else your bag; range 50 m)
     [HarmonyPatch]
-    [BepInPlugin("felih.Hoardkeeper", "Hoardkeeper", "1.1.0")]
+    [BepInPlugin("felih.Hoardkeeper", "Hoardkeeper", "1.1.1")]
     public class Plugin : BaseUnityPlugin
     {
         internal enum SortOrder { Type, NameAZ, NameZA, Quality, Weight, Amount, Value }
@@ -51,7 +51,7 @@ namespace Hoardkeeper
             StorageHeight = Config.Bind("Display", "WindowHeight", 0f, "Height of the Storage window. 0 = from the top of your bag down to near the bottom of the screen.");
             ScrollSpeed = Config.Bind("Display", "ScrollSpeed", 3000f, "How far the mouse wheel scrolls the Storage window.");
             StorageWidth = Config.Bind("Display", "WindowWidth", 0f, "Width of the Storage window. 0 = from the button column to near the right edge of the screen.");
-            ButtonsOffset = Config.Bind("Display", "ButtonsOffset", new Vector2(8f, 0f), "Where the button column sits, from the top-right corner of your inventory.");
+            ButtonsOffset = Config.Bind("Display", "ButtonsOffset", new Vector2(8f, 0f), "Where the button column sits, from the top-right corner of the chest window (it stays there with no chest open too).");
             new Harmony("felih.Hoardkeeper").PatchAll(typeof(Plugin).Assembly);
         }
 

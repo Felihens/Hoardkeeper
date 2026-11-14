@@ -9,12 +9,13 @@ using UnityEngine.UI;
 
 namespace Hoardkeeper
 {
-    // The button column right of your inventory (copies of the game's own "Take all" button, so they look
+    // The button column right of the chest window (copies of the game's own "Take all" button, so they look
     // like Valheim's), the lock marks on your slots, and Alt + click to lock a slot.
     [HarmonyPatch]
     internal static class Ui
     {
         private static RectTransform _column;
+        private static readonly Vector3[] Corners = new Vector3[4];
         internal static RectTransform Column { get { return _column; } }
         private static Button _store;
         private static readonly List<Button> _all = new List<Button>();
@@ -31,7 +32,15 @@ namespace Hoardkeeper
             if (__instance.m_player == null || __instance.m_takeAllButton == null) return;
             if (_column == null) Build(__instance);
             if (_column == null || !InventoryGui.IsVisible()) return;
-            _column.anchoredPosition = Plugin.ButtonsOffset.Value;
+            // beside the chest window (its top-right corner), not beside your inventory, where the game shows your
+            // armor; the chest window keeps its place when no chest is open, so the column doesn't move
+            if (__instance.m_container != null)
+            {
+                __instance.m_container.GetWorldCorners(Corners);   // 2 = top right
+                _column.position = Corners[2];
+                _column.anchoredPosition += Plugin.ButtonsOffset.Value;
+            }
+            else _column.anchoredPosition = Plugin.ButtonsOffset.Value;
             _store.gameObject.SetActive(__instance.IsContainerOpen());
             float y = 0f;
             foreach (Button b in _all)

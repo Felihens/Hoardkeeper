@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.1.1
+- The button column (Storage, Sort, Stack, Restock, Store all, trash) now sits beside the chest window instead of beside your inventory, so it no longer covers the game's own armor number and buttons. `ButtonsOffset` counts from the chest window's top-right corner.
+- A coluna de botões (Storage, Sort, Stack, Restock, Store all, lixeira) agora fica ao lado da janela do baú, e não mais ao lado do inventário, então não cobre mais o número de armadura e os botões do próprio jogo. `ButtonsOffset` conta a partir do canto superior direito da janela do baú.
+
 ## 1.1.0
 - Searching (box or right-click) moves the chests holding the item to the top of the Storage window. / A busca (caixa ou clique direito) leva para o topo os baús que têm o item.
 - New *Filter* button in the Storage window: show only the chests with one tag. / Novo botão *Filter* na janela Storage: mostra só os baús com uma tag.
