@@ -29,6 +29,8 @@ namespace Hoardkeeper
             public int rows = -1, cols = -1;
             public bool placed;     // laid out at least once (before that its place on screen means nothing)
             public float btnW, h;
+            public int sig;              // what the grid showed when last redrawn (contents, search, dragged item)
+            public float redrawAt;       // a redraw is due then even if nothing seems changed
             public RectTransform chips;
             public readonly List<KeyValuePair<string, Button>> chipBtns = new List<KeyValuePair<string, Button>>();
         }
@@ -182,7 +184,8 @@ namespace Hoardkeeper
             if (gui.m_container == null || gui.m_takeAllButton == null) return;
             GameObject pg = new GameObject("Hoardkeeper_Storage", typeof(RectTransform));
             _panel = (RectTransform)pg.transform;
-            _panel.SetParent(gui.m_inventoryRoot != null ? gui.m_inventoryRoot : gui.m_container.parent, false);
+            _invRoot = gui.m_inventoryRoot != null ? gui.m_inventoryRoot : gui.m_container.parent;
+            _panel.SetParent(Host(_invRoot), false);
             _panel.anchorMin = _panel.anchorMax = new Vector2(0.5f, 0.5f);
             _panel.pivot = new Vector2(0f, 1f);
             Skin.Window(gui, _panel, pg.AddComponent<Image>());
@@ -245,13 +248,13 @@ namespace Hoardkeeper
 
             BuildFilter(gui, filterY);
             GameObject nb = new GameObject("Hoardkeeper_NotesBg", typeof(RectTransform), typeof(Image));
-            nb.transform.SetParent(_panel.parent, false);
+            nb.transform.SetParent(_invRoot, false);
             _notesBg = nb.GetComponent<Image>();
             _notesBg.raycastTarget = false;
             _notesBg.rectTransform.anchorMin = _notesBg.rectTransform.anchorMax = new Vector2(0.5f, 0.5f);
             _notesBg.rectTransform.pivot = new Vector2(0f, 1f);
             nb.SetActive(false);
-            _notes = Ui.Text(gui, _panel.parent, 22f, new Color(1f, 0.88f, 0.6f, 1f), TextAlignmentOptions.TopLeft);
+            _notes = Ui.Text(gui, _invRoot, 22f, new Color(1f, 0.88f, 0.6f, 1f), TextAlignmentOptions.TopLeft);
             _notes.gameObject.name = "Hoardkeeper_Notes";
             _notes.enableWordWrapping = true;
             _notes.overflowMode = TextOverflowModes.Overflow;
@@ -506,6 +509,7 @@ namespace Hoardkeeper
             if (orig == null) return null;
             GameObject g = UnityEngine.Object.Instantiate(orig.gameObject, parent, false);
             g.name = "Grid";
+            Ui.NoHints(g);
             g.SetActive(true);
             InventoryGrid grid = g.GetComponent<InventoryGrid>();
             if (grid.m_gridRoot == null || grid.m_gridRoot == orig.m_gridRoot)
@@ -564,6 +568,12 @@ namespace Hoardkeeper
             if (s.grid == null || s.grid.m_gridRoot == null || s.muted == s.grid.m_gridRoot.childCount) return;
             s.muted = s.grid.m_gridRoot.childCount;
             foreach (ButtonSfx b in s.grid.m_gridRoot.GetComponentsInChildren<ButtonSfx>(true)) UnityEngine.Object.Destroy(b);
+            // out of gamepad navigation: when a dialog (split stack) opens or closes, the game's UIGroupHandler looks
+            // for the next button to select, and Unity's search walks every active button on screen at each step;
+            // with every chest's slots that took ~0.9 s (profiler, 2026-11-19). Mouse clicks are not affected.
+            Navigation none = new Navigation();
+            none.mode = Navigation.Mode.None;
+            foreach (Selectable sel in s.grid.m_gridRoot.GetComponentsInChildren<Selectable>(true)) sel.navigation = none;
         }
 
         private static readonly FieldInfo TipHoveredF = AccessTools.Field(typeof(UITooltip), "m_hovered");
@@ -711,7 +721,9 @@ namespace Hoardkeeper
                 _redrawn = 0;
                 // while the split dialog is up, clicks don't reach the chests behind it
                 bool split = __instance.m_splitDialog != null && __instance.m_splitDialog.IsActive;
-                if (_panelGroup != null && _panelGroup.blocksRaycasts == split) _panelGroup.blocksRaycasts = !split;
+                // (toggling the whole window's CanvasGroup here made Unity re-check every chest slot: ~2 s freezes
+                // on each split open/close, 2026-11-19. A clear cover on top swallows the clicks instead.)
+                Cover(split);
                 Refresh(__instance, p);
                 ShowNotes(__instance);
                 NoTipsUnder();
@@ -747,14 +759,23 @@ namespace Hoardkeeper
             gui.m_player.GetWorldCorners(cs);
             float top = cs[1].y, left = cs[2].x + 150f * _panel.lossyScale.x;
             RectTransform col = Ui.Column;
-            if (col != null && col.gameObject.activeInHierarchy) { col.GetWorldCorners(cs); left = cs[2].x; foreach (Button b in col.GetComponentsInChildren<Button>()) { ((RectTransform)b.transform).GetWorldCorners(cs); left = Mathf.Max(left, cs[2].x); } }
+            if (col != null && col.gameObject.activeInHierarchy)
+            {
+                col.GetWorldCorners(cs); left = cs[2].x;
+                if (_colBtns == null || Time.unscaledTime >= _colBtnsAt) { _colBtns = col.GetComponentsInChildren<Button>(); _colBtnsAt = Time.unscaledTime + 1f; }
+                foreach (Button b in _colBtns) { if (b == null) continue; ((RectTransform)b.transform).GetWorldCorners(cs); left = Mathf.Max(left, cs[2].x); }
+            }
             left += 12f;
             float sx = Mathf.Max(0.01f, _panel.lossyScale.x), sy = Mathf.Max(0.01f, _panel.lossyScale.y);
             _panel.position = new Vector3(left, top, _panel.position.z);
             float w = Plugin.StorageWidth.Value > 0f ? Plugin.StorageWidth.Value : Mathf.Max(560f, (Screen.width - 30f - left) / sx);
             float h = Plugin.StorageHeight.Value > 0f ? Plugin.StorageHeight.Value : Mathf.Max(300f, (top - 90f) / sy);
             _panel.sizeDelta = new Vector2(w, h);
-            if (_panel.GetSiblingIndex() != _panel.parent.childCount - 1) _panel.SetAsLastSibling();
+            // just in front of the inventory (things the game adds later, like tooltips, stay in front of it)
+            if (_above != null && _above.parent == _panel.parent && _panel.GetSiblingIndex() != _above.GetSiblingIndex() + 1)
+                _panel.SetSiblingIndex(_above.GetSiblingIndex() + (_panel.GetSiblingIndex() > _above.GetSiblingIndex() ? 1 : 0));
+            else if (_above == null && _panel.GetSiblingIndex() != _panel.parent.childCount - 1) _panel.SetAsLastSibling();
+            if (gui.m_splitDialog != null && gui.m_splitDialog.IsActive) DialogOnTop(gui);
             Ui.Label(_bagBtn, Plugin.GatherFromBag.Value ? "Bag: on" : "Bag: off");
             if (_renaming != null && !_rename.isFocused && !_rename.gameObject.activeSelf) _renaming = null;
 
@@ -810,10 +831,18 @@ namespace Hoardkeeper
                 {
                     ZNetView nv = Chests.View(s.c);
                     if (!nv.IsOwner()) { Chests.Claim(s.c); Chests.MarkInUse(s.c, true); }
-                    s.grid.UpdateInventory(inv, null, drag);
-                    _redrawn++;
-                    Mute(s);
-                    if (seen) Tint(s.grid, inv);
+                    // redrawing every slot of every chest each frame was the window's main cost (2026-11-19
+                    // profiler): only when what it shows changed, and once a second to be safe
+                    int sig = Sig(inv, drag, filter);
+                    if (sig != s.sig || Time.unscaledTime >= s.redrawAt)
+                    {
+                        s.sig = sig;
+                        s.redrawAt = Time.unscaledTime + 1f + UnityEngine.Random.Range(0f, 1f);   // spread out, so not every chest redraws in the same frame
+                        s.grid.UpdateInventory(inv, null, drag);
+                        _redrawn++;
+                        Mute(s);
+                        Tint(s.grid, inv);
+                    }
                 }
             }
             // rows of cards, every card in a row as tall as the tallest
@@ -832,8 +861,102 @@ namespace Hoardkeeper
                 y += rowH + Gap;
             }
             _content.sizeDelta = new Vector2(0f, y);
+            // your bag: the game redraws it itself every frame, so its search tint is laid again each frame
             Tint(gui.m_playerGrid, p.GetInventory());
             if (Time.time >= _statusAt) { _statusAt = Time.time + 0.3f; Status(p); }
+        }
+
+        private static Transform _invRoot, _above;
+
+        // The game's UI groups (UIGroupHandler) look through every button under them each time a dialog such as
+        // split stack opens or closes; with every chest's slots under the inventory that froze the game ~2 s
+        // (2026-11-19). So this window hangs beside the inventory, outside all of its groups.
+        private static Transform Host(Transform inv)
+        {
+            Transform top = null;
+            for (Transform t = inv; t != null; t = t.parent)
+                if (t.GetComponent<UIGroupHandler>() != null || t.GetComponent<CanvasGroup>() != null) top = t;
+            if (top == null || top.parent == null || top.parent.GetComponentInParent<Canvas>() == null) { _above = null; Plugin.Log.LogInfo("Storage: kept under " + inv.name); return inv; }
+            _above = top;
+            Plugin.Log.LogInfo("Storage: hangs under " + top.parent.name + ", beside " + top.name + " (outside the inventory's UI groups)");
+            return top.parent;
+        }
+
+        // the split dialog gets its own layer, in front of this window
+        private static bool _dialogLifted;
+        private static void DialogOnTop(InventoryGui gui)
+        {
+            if (_dialogLifted) return;
+            _dialogLifted = true;
+            GameObject d = gui.m_splitDialog.gameObject;
+            Canvas root = _panel.GetComponentInParent<Canvas>();
+            Canvas c = d.GetComponent<Canvas>();
+            if (c == null) c = d.AddComponent<Canvas>();
+            c.overrideSorting = true;
+            c.sortingOrder = (root != null ? root.rootCanvas.sortingOrder : 0) + 20;
+            if (d.GetComponent<GraphicRaycaster>() == null) d.AddComponent<GraphicRaycaster>();
+            Plugin.Log.LogInfo("Storage: split dialog drawn on its own layer (order " + c.sortingOrder + ")");
+        }
+
+        // the item you drag is drawn inside the inventory; give it its own layer so it shows over this window too
+        private static readonly FieldInfo DragGoF = AccessTools.Field(typeof(InventoryGui), "m_dragGo");
+        [HarmonyPatch(typeof(InventoryGui), "SetupDragItem"), HarmonyPostfix]
+        private static void DragOnTop(InventoryGui __instance)
+        {
+            if (_panel == null || _above == null || DragGoF == null) return;
+            GameObject go = DragGoF.GetValue(__instance) as GameObject;
+            if (go == null || go.GetComponent<Canvas>() != null) return;
+            Canvas root = _panel.GetComponentInParent<Canvas>();
+            Canvas c = go.AddComponent<Canvas>();
+            c.overrideSorting = true;
+            c.sortingOrder = (root != null ? root.rootCanvas.sortingOrder : 0) + 30;
+        }
+
+        private static Image _cover;
+
+        private static void Cover(bool on)
+        {
+            if (_panel == null) return;
+            if (_cover == null)
+            {
+                if (!on) return;
+                GameObject g = new GameObject("Hoardkeeper_Cover", typeof(RectTransform), typeof(Image));
+                RectTransform r = (RectTransform)g.transform;
+                r.SetParent(_panel, false);
+                r.anchorMin = Vector2.zero; r.anchorMax = Vector2.one;
+                r.offsetMin = r.offsetMax = Vector2.zero;
+                _cover = g.GetComponent<Image>();
+                _cover.color = new Color(0f, 0f, 0f, 0.25f);   // also dims the chests while the dialog is up
+                _cover.raycastTarget = true;
+            }
+            if (on && _cover.transform.GetSiblingIndex() != _panel.childCount - 1) _cover.transform.SetAsLastSibling();
+            if (_cover.enabled != on) _cover.enabled = on;
+        }
+
+        private static Button[] _colBtns;
+        private static float _colBtnsAt;
+
+        // a cheap fingerprint of what a chest grid shows: its items (kind, amount, place, quality, wear), the
+        // search and the item you drag
+        private static int Sig(Inventory inv, ItemDrop.ItemData drag, string filter)
+        {
+            unchecked
+            {
+                int h = 17;
+                foreach (ItemDrop.ItemData it in inv.GetAllItems())
+                {
+                    h = h * 31 + System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(it.m_shared);
+                    h = h * 31 + it.m_stack;
+                    h = h * 31 + it.m_gridPos.x * 97 + it.m_gridPos.y;
+                    h = h * 31 + it.m_quality;
+                    h = h * 31 + (int)it.m_durability;
+                }
+                h = h * 31 + inv.GetAllItems().Count;
+                h = h * 31 + (drag != null ? System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(drag) : 0);
+                h = h * 31 + filter.GetHashCode();
+                h = h * 31 + (_chosen != null ? _chosen.GetHashCode() : 0);
+                return h;
+            }
         }
 
         // ------------------------------------------------------------ search and chosen item

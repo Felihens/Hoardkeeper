@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.1.2
+- Splitting a stack (Shift + click) with the Storage window open no longer freezes the game for about 2 seconds. / Dividir uma pilha (Shift + clique) com a janela de Storage aberta não trava mais o jogo por uns 2 segundos.
+- The Storage window is lighter: each chest is redrawn only when its contents, the search or the dragged item change. / A janela de Storage ficou mais leve: cada baú só é redesenhado quando o conteúdo, a busca ou o item arrastado mudam.
+
 ## 1.1.1
 - The button column (Storage, Sort, Stack, Restock, Store all, trash) now sits beside the chest window instead of beside your inventory, so it no longer covers the game's own armor number and buttons. `ButtonsOffset` counts from the chest window's top-right corner.
 - A coluna de botões (Storage, Sort, Stack, Restock, Store all, lixeira) agora fica ao lado da janela do baú, e não mais ao lado do inventário, então não cobre mais o número de armadura e os botões do próprio jogo. `ButtonsOffset` conta a partir do canto superior direito da janela do baú.

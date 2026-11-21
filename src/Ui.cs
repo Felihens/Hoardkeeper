@@ -90,6 +90,25 @@ namespace Hoardkeeper
             return b;
         }
 
+        // A copied game button keeps its gamepad hint (UIInputHint), still tied to the inventory's UI group: every
+        // time a dialog (split stack) opens or closes, each copy re-laid itself out, and with a few buttons per
+        // chest that froze the game ~0.85 s (profiler, 2026-11-19). Our copies don't need the hint.
+        internal static void NoHints(GameObject g)
+        {
+            foreach (UIInputHint h in g.GetComponentsInChildren<UIInputHint>(true))
+            {
+                h.enabled = false;   // so its Start (where it joins the group) never runs
+                // the hint kept its gamepad pictures hidden while you use mouse and keyboard; hide them for good
+                // (without this they showed "MISSING BUTTON DEF" over the window)
+                foreach (string f in new[] { "m_gamepadHint", "m_gamepadMouseHint" })
+                {
+                    GameObject o = Traverse.Create(h).Field(f).GetValue<GameObject>();
+                    if (o != null && o != g && o != h.gameObject) o.SetActive(false);
+                }
+                UnityEngine.Object.Destroy(h);
+            }
+        }
+
         // a copy of the game's own Take all button
         internal static Button CloneButton(InventoryGui gui, Transform parent, string label, float w, float h, Action click, string tip)
         {
@@ -104,6 +123,7 @@ namespace Hoardkeeper
             b.onClick = new Button.ButtonClickedEvent();
             b.onClick.AddListener(() => { try { if (Player.m_localPlayer != null) click(); } catch (Exception e) { Plugin.Log.LogWarning(g.name + " failed: " + e); } });
             foreach (UIGamePad gp in g.GetComponentsInChildren<UIGamePad>(true)) UnityEngine.Object.Destroy(gp);
+            NoHints(g);
             TMP_Text t = g.GetComponentInChildren<TMP_Text>(true);
             if (t != null)
             {
